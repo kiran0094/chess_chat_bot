@@ -2,25 +2,86 @@
 
 import { useChat } from '@ai-sdk/react';
 import { Message } from 'ai';
-import React from "react";
+import React, { useCallback, useRef, useEffect } from "react";
 import { ShootingStars } from "@/components/ui/shooting-stars";
 import { BeatLoader } from "react-spinners";
 import Bubble from "@/components/ui_compounts/bubble";
 import Prompt_suggestion from '@/components/ui_compounts/prompt_suggestion';
+import { v4 as uuidv4 } from 'uuid'; // Import UUID library
 
 export default function Page() {
-  const { messages, input, handleSubmit, handleInputChange, append, isLoading } =
-    useChat(); 
-  const nomessages: boolean = messages.length === 0;
+  // Reference to track if we should make an API call
+  const shouldCallAPI = useRef(true);
+  
+  // Custom message handler to control when API is called
+  const handleMessage = useCallback((message: Message) => {
+    // Only allow messages with role "user" to trigger an API call
+    if (message.role === "user") {
+      shouldCallAPI.current = true;
+      return true; // Allow the message to be processed
+    }  
+    // For non-user messages (e.g. added programmatically), don't trigger API call
+    shouldCallAPI.current = false;
+    return true;
+  }, []);
 
-  const handlePrompt = (prompttext: string) => {
+  // Response handler
+  const handleResponse = useCallback(async (response: Response) => {
+    try {
+      const data = await response.json();
+      console.log("API Response Body:", data);
+      
+      if (data?.message) {
+        let message: Message = {
+          id: uuidv4(),
+          content: data.message,
+          role: "assistant",
+        }
+        // Append the message to the chat
+        append(message);
+      }
+    } catch (err) {
+      console.error("Error parsing response:", err);
+    }
+    return null;
+  }, []);
+
+  const { 
+    messages, 
+    input, 
+    handleSubmit, 
+    handleInputChange, 
+    append, 
+    isLoading 
+  } = useChat({
+    onResponse: handleResponse,
+    onBuildRequest: (request) => {
+      // Check if we should actually make the API call
+      if (!shouldCallAPI.current) {
+        // Return null to prevent the API call
+        return null;
+      }
+      return request;
+    },
+    onFinish: () => {
+      // Reset the flag after completion
+      shouldCallAPI.current = false;
+    }
+  });
+
+  const nomessages = messages.length === 0;
+
+  const handlePrompt = useCallback((prompttext: string) => {
+    // When adding a prompt, we want to trigger the API call
+    shouldCallAPI.current = true;
+    
     const msg: Message = {
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       content: prompttext,
       role: "user",
     };
     append(msg);
-  };
+  }, [append]);
 
   return (
     <div className="h-min-[100vh] w-full bg-black relative overflow-hidden text-white">
